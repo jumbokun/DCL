@@ -161,7 +161,8 @@ class PositionalEncoding(nn.Module):
         # print(tmp_pe[:,19])
         # print(tmp_pe[:,20])
         for num in range(len(self.inds)):
-            # print(num)
+        # for num in range(80):
+            # print("num:"+str(num))
             # print(self.inds[num])
             # print(tmp_pe[:,self.inds[num]].permute(1,0,2).squeeze(1))
             final_pe[:,num,:] = tmp_pe[:,self.inds[num]].permute(1,0,2).squeeze(1)

@@ -1,4 +1,5 @@
 import torch
+from torch.nn.parallel import DistributedDataParallel
 import argparse
 import ruamel_yaml as yaml
 import numpy as np
@@ -12,10 +13,12 @@ from models.blip import blip_decoder
 from blip_original import create_loader, create_dataset
 import os
 from transformers import AutoTokenizer, AutoModel
-
-
+import torch.nn.functional as F
+import torch.distributed
 
 def main(args, config):
+    # torch.distributed.init_process_group(backend='nccl')
+    # print(torch.distributed.get_world_size())
 
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
@@ -34,6 +37,12 @@ def main(args, config):
     tokenizer.add_special_tokens({'additional_special_tokens': ['[ENC]']})
     tokenizer.enc_token_id = tokenizer.additional_special_tokens_ids[0]
     # tokenizer = BertTokenizer.from_pretrained(args.text_encoder)
+
+    # TODO: check how to load vit checkpoint. I still could not find the loading program. Huggingface is ofc a solution if we need to write it ourself.
+    model = blip_decoder(pretrained=args.pretrained, image_size=config['image_size'], vit=config['vit'],
+                         vit_grad_ckpt=config['vit_grad_ckpt'], vit_ckpt_layer=config['vit_ckpt_layer'],
+                         prompt=config['prompt'], tokenizer=tokenizer, args=args)
+    
     train_dataset, val_dataset, test_dataset = create_dataset('generation_%s'%args.dataset_name, args, config)
     samplers = [None, None, None]
     train_dataloader, val_dataloader, test_dataloader = create_loader([train_dataset, val_dataset, test_dataset], samplers,
@@ -41,11 +50,6 @@ def main(args, config):
                                                             num_workers=[4, 4, 4],
                                                             is_trains=[True, False, False],
                                                             collate_fns=[None, None, None])
-
-    model = blip_decoder(pretrained=args.pretrained, image_size=config['image_size'], vit=config['vit'],
-                         vit_grad_ckpt=config['vit_grad_ckpt'], vit_ckpt_layer=config['vit_ckpt_layer'],
-                         prompt=config['prompt'], tokenizer=tokenizer, args=args)
-
 
     # get function handles of loss and metrics
     criterion = compute_loss
@@ -76,7 +80,7 @@ if __name__ == '__main__':
     parser.add_argument('--distributed', default=True, type=bool)
 
     parser.add_argument('--image_dir', type=str,
-                        default='./dataset/iu_xray/images&./dataset/MIMIC-CXR/mimic_cxr/images',
+                        default='./dataset/iu_xray/images&/DATA1/llm-research/MIMIC-CXR/files',
                         help='the path to the directory containing the data.')
     parser.add_argument('--ann_path', type=str,
                         default='./annotations/iu-annotation.json&./annotations/mimic_annotation.json',
@@ -86,7 +90,7 @@ if __name__ == '__main__':
                         help='the path to the directory containing the data.')
 
     # Data loader settings
-    parser.add_argument('--dataset_name', type=str, default='iu_xray', choices=['iu_xray', 'mimic_cxr'],
+    parser.add_argument('--dataset_name', type=str, default='mimic_cxr', choices=['iu_xray', 'mimic_cxr'],
                         help='the dataset to be used.')
     parser.add_argument('--max_seq_length', type=int, default=90, help='the maximum sequence length of the reports.')
     parser.add_argument('--threshold', type=int, default=3, help='the cut off frequency for the words.')
@@ -160,11 +164,13 @@ if __name__ == '__main__':
     parser.add_argument('--add_memory', type=bool, default=False, help='whether to test the best model.')
     parser.add_argument('--tokenizer', type=str, default='blip', choices=['r2gen', 'blip'],
                         help='the dataset to be used.')
-    parser.add_argument('--bert', type=str, default='base', choices=['base', 'sci', 'cli'],
+    parser.add_argument('--bert', type=str, default='sci', choices=['base', 'sci', 'cli'],
                         help='the dataset to be used.')
     parser.add_argument('--concat', default=False, type=bool)
-    args = parser.parse_args()
+    parser.add_argument('--task', default="pretrain", type=bool) 
 
-    config = yaml.load(open(args.config, 'r'), Loader=yaml.Loader)
+    args = parser.parse_args()
+    
+    config = yaml.load(open('/DATA1/bzhu/DCL/configs/BLIP.yaml', 'r'), Loader=yaml.Loader)
 
     main(args, config)

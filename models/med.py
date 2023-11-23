@@ -292,10 +292,7 @@ class BertIntermediate(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.intermediate_size)
-        if isinstance(config.hidden_act, str):
-            self.intermediate_act_fn = ACT2FN[config.hidden_act]
-        else:
-            self.intermediate_act_fn = config.hidden_act
+        self.intermediate_act_fn = nn.GELU()
 
     def forward(self, hidden_states):
         hidden_states = self.dense(hidden_states)
@@ -502,10 +499,7 @@ class BertPredictionHeadTransform(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        if isinstance(config.hidden_act, str):
-            self.transform_act_fn = ACT2FN[config.hidden_act]
-        else:
-            self.transform_act_fn = config.hidden_act
+        self.transform_act_fn = nn.GELU()
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
     def forward(self, hidden_states):
@@ -588,7 +582,6 @@ class BertModel(BertPreTrainedModel):
             self.encoder = BertEncoder(config)
 
             self.pooler = BertPooler(config) if add_pooling_layer else None
-
             self.init_weights()
  
 
@@ -816,7 +809,6 @@ class BertLMHeadModel(BertPreTrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-
         self.bert = BertModel(config, add_pooling_layer=False)
         self.cls = BertOnlyMLMHead(config)
 

@@ -1,0 +1,29 @@
+# .gitignore
+
+# Ignore everything in the annotations directory
+*/annotations/*
+annotations/*
+annotations/mimic_annotation.json
+annotations/mimic_train_kg_AO.json
+/DATA1/bzhu/DCL/annotations/*
+
+# Python files to ignore
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Jupyter notebook files to ignore
+.ipynb_checkpoints
+
+# Other files and directories to ignore
+.DS_Store
+.env
+.venv
+env/
+venv/
+*.log
+*.csv
+*.json
+*.lock
+*.sqlite

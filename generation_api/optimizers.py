@@ -10,6 +10,9 @@ def build_optimizer(args, model):
         weight_decay=args.weight_decay,
         amsgrad=args.amsgrad
     )
+    print('optimizer')
+    print(model.visual_extractor.parameters())
+    print(ed_params)
     return optimizer
 
 def build_optimizer_blip(args, model):
@@ -21,6 +24,10 @@ def build_optimizer_blip(args, model):
         weight_decay=args.weight_decay,
         amsgrad=args.amsgrad
     )
+    print(optimizer)
+    for param in model.parameters():
+        print(param.shape)
+    # print(list(ed_params))
     return optimizer
 
 

@@ -11,6 +11,9 @@ from generation_api.tokenizers_blip import Tokenizer
 
 
 class BaseTrainer(object):
+    def print_grad(grad):
+        print(grad)
+
     def __init__(self, model, criterion, metric_ftns, optimizer, args, tokenizer):
         self.args = args
         self.tokenizer = tokenizer
@@ -227,12 +230,13 @@ class Trainer(BaseTrainer):
 
             loss_irc, loss_irm, loss_lm = self.model(images, captions, knowledge_skg, knowledge_tc,alpha=alpha,epoch=epoch)
             loss = loss_irc+ loss_irm + loss_lm
-
+            print(f"Loss = {loss_irc} (loss_irc) + {loss_irm} (loss_irm) + {loss_lm} (loss_lm)")
             train_loss += loss.item()
             self.writer.add_scalar("data/Loss", loss.item(), batch_idx+len(self.train_dataloader)*(epoch-1))
             
             print_loss += loss.item()
             self.optimizer.zero_grad()
+            
             loss.backward()
             torch.nn.utils.clip_grad_value_(self.model.parameters(), 0.1)
             self.optimizer.step()

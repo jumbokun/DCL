@@ -1,6 +1,10 @@
 import warnings
 warnings.filterwarnings("ignore")
+import sys
+import os
+sys.path.insert(0, '/DATA1/bzhu/DCL/medical_knowledge')
 
+import logging
 from models.vit_blip import VisionTransformer, interpolate_pos_embed
 from models.med import BertConfig, BertModel, BertLMHeadModel
 from transformers import BertTokenizer, AutoTokenizer
@@ -18,11 +22,14 @@ from functools import partial
 from medical_knowledge.knowledge import create_knowledge
 from medical_knowledge.SKG_knowledge import *
 from models.tagencoder import TagEncoder, update_skg
-        
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
+base_path = os.getcwd()
         
 class BLIP_Decoder(nn.Module):
     def __init__(self,                 
-                 med_config = 'configs/med_config.json',  
+                 med_config = os.path.join(base_path, 'configs/med_config.json'),  
                  image_size = 224,
                  vit = 'base',
                  vit_grad_ckpt = False,
@@ -41,7 +48,7 @@ class BLIP_Decoder(nn.Module):
             vit (str): model size of vision transformer
         """            
         super().__init__()
-        
+
         self.visual_encoder, vision_width = create_vit(vit, image_size, vit_grad_ckpt, vit_ckpt_layer)
         # self.tokenizer = init_tokenizer()
         self.tokenizer = tokenizer
@@ -49,11 +56,11 @@ class BLIP_Decoder(nn.Module):
         self.prompt = prompt
         
         if args.bert == 'base':
-            med_config = 'configs/med_config_blip.json'
+            med_config = os.path.join(base_path, 'configs/med_config_blip.json')
         elif args.bert == 'sci':
-            med_config = 'configs/med_config_sci.json'
+            med_config = os.path.join(base_path, 'configs/med_config_sci.json')
         elif args.bert == 'cli':
-            med_config = 'configs/med_config_cli.json'
+            med_config = os.path.join(base_path, 'configs/med_config_cli.json')
         med_config = BertConfig.from_json_file(med_config)
         med_config.encoder_width = vision_width
         self.text_encoder = BertModel(config=med_config, add_pooling_layer=False)
@@ -121,12 +128,15 @@ class BLIP_Decoder(nn.Module):
         self.temp = nn.Parameter(0.07*torch.ones([]))   
         
         # create the decoder
-        decoder_config = BertConfig.from_json_file(med_config)
+        decoder_config = med_config
         decoder_config.encoder_width = vision_width
         if args.bert == 'base':
             self.text_decoder = BertLMHeadModel.from_pretrained('bert-base-uncased',config=decoder_config)
         elif args.bert == 'sci':
-            self.text_decoder = BertLMHeadModel.from_pretrained('allenai/scibert_scivocab_uncased',config=decoder_config)
+            scibert = BertModel.from_pretrained('allenai/scibert_scivocab_uncased')
+            self.text_decoder = BertLMHeadModel(config = decoder_config)
+            self.text_decoder.load_state_dict(scibert.state_dict(), strict = False)
+            # self.text_decoder = BertLMHeadModel.from_pretrained('allenai/scibert_scivocab_uncased',config=decoder_config)
         elif args.bert == 'cli':
             self.text_decoder = BertLMHeadModel.from_pretrained('emilyalsentzer/Bio_ClinicalBERT',config=decoder_config)
         self.text_decoder.resize_token_embeddings(len(self.tokenizer))
@@ -139,6 +149,7 @@ class BLIP_Decoder(nn.Module):
         
         
     def forward(self, image, caption, knowledge_skg, knowledge_tc,alpha, epoch):
+        torch.autograd.set_detect_anomaly(True)
         with torch.no_grad():
             self.temp.clamp_(0.001,0.5)
         if self.args.dataset_name == 'iu_xray':
@@ -240,9 +251,8 @@ class BLIP_Decoder(nn.Module):
                 image_embeds_m = self.iu_proj_m(image_embeds_m)
             else:
                 image_embeds_m = self.visual_encoder_m(image)
-            
-            image_feat_m = F.normalize(self.vision_proj_m(image_embeds_m[:, 0, :]),dim=-1)
 
+            image_feat_m = F.normalize(self.vision_proj_m(image_embeds_m[:, 0, :]),dim=-1)
             text_output_m = self.text_encoder_m(text.input_ids, attention_mask=text.attention_mask,
                                                 return_dict=True, mode='text')
             text_feat_m = F.normalize(self.text_proj_m(text_output_m.last_hidden_state[:, 0, :]), dim=-1)
@@ -346,10 +356,9 @@ class BLIP_Decoder(nn.Module):
                                            labels = decoder_targets,
                                            return_dict = True,
                                           )
-
+        
 
         loss_lm = decoder_output.loss
-
         return loss_irc, loss_irm, loss_lm
         
     def generate(self, image, knowledge_skg, sample=False, num_beams=3, max_length=90, min_length=10, top_p=0.9, repetition_penalty=1.0):
@@ -476,17 +485,16 @@ class BLIP_Decoder(nn.Module):
     @torch.no_grad()
     def _dequeue_and_enqueue(self, image_feat, text_feat):
         # gather keys before updating queue
-        image_feats = concat_all_gather(image_feat)
-        text_feats = concat_all_gather(text_feat)
+        # image_feats = concat_all_gather(image_feat)
+        # text_feats = concat_all_gather(text_feat)
 
-        batch_size = image_feats.shape[0]
-
+        batch_size = image_feat.shape[0]
         ptr = int(self.queue_ptr)
         assert self.queue_size % batch_size == 0  # for simplicity
 
         # replace the keys at ptr (dequeue and enqueue)
-        self.image_queue[:, ptr:ptr + batch_size] = image_feats.T
-        self.text_queue[:, ptr:ptr + batch_size] = text_feats.T
+        self.image_queue[:, ptr:ptr + batch_size] = image_feat.T
+        self.text_queue[:, ptr:ptr + batch_size] = text_feat.T
 
         ptr = (ptr + batch_size) % self.queue_size  # move pointer
 
@@ -570,9 +578,11 @@ def concat_all_gather(tensor):
     """
     tensors_gather = [torch.ones_like(tensor)
         for _ in range(torch.distributed.get_world_size())]
+        # for _ in range(2)] # Since we dont (have to) use dist lib, then the world size should be 2(?)
     torch.distributed.all_gather(tensors_gather, tensor, async_op=False)
-
-    output = torch.cat(tensors_gather, dim=0)
+    print(tensor.shape)
+    print(tensors_gather)
+    output = torch.cat(tensor, dim=0)
     return output     
 
 
