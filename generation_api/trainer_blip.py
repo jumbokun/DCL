@@ -8,7 +8,10 @@ from numpy import inf
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 from generation_api.tokenizers_blip import Tokenizer
+import logging
 
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger()
 
 class BaseTrainer(object):
     def print_grad(grad):
@@ -219,30 +222,33 @@ class Trainer(BaseTrainer):
 
         self.model.train()
         for batch_idx, (images, captions, knowledge_skg, knowledge_tc) in enumerate(self.train_dataloader):
-            
-            # ramp up alpha in the first 2 epochs
-            if epoch > 0:
-                alpha = 0.4
-            else:
-                alpha = 0.4 * min(1, batch_idx / len(self.train_dataloader))
-            
-            images = images.to(self.device)
+            try:
+                # ramp up alpha in the first 2 epochs
+                if epoch > 0:
+                    alpha = 0.4
+                else:
+                    alpha = 0.4 * min(1, batch_idx / len(self.train_dataloader))
+                
+                images = images.to(self.device)
 
-            loss_irc, loss_irm, loss_lm = self.model(images, captions, knowledge_skg, knowledge_tc,alpha=alpha,epoch=epoch)
-            loss = loss_irc+ loss_irm + loss_lm
-            print(f"Loss = {loss_irc} (loss_irc) + {loss_irm} (loss_irm) + {loss_lm} (loss_lm)")
-            train_loss += loss.item()
-            self.writer.add_scalar("data/Loss", loss.item(), batch_idx+len(self.train_dataloader)*(epoch-1))
-            
-            print_loss += loss.item()
-            self.optimizer.zero_grad()
-            
-            loss.backward()
-            torch.nn.utils.clip_grad_value_(self.model.parameters(), 0.1)
-            self.optimizer.step()
-            if batch_idx %5 == 0:
-                print('Epoch: {}, Training Loss: {:.4f}'.format(epoch, print_loss/5))
-                print_loss = 0
+                loss_irc, loss_irm, loss_lm = self.model(images, captions, knowledge_skg, knowledge_tc,alpha=alpha,epoch=epoch)
+                loss = loss_irc+ loss_irm + loss_lm
+                print(f"Loss = {loss_irc} (loss_irc) + {loss_irm} (loss_irm) + {loss_lm} (loss_lm)")
+                train_loss += loss.item()
+                self.writer.add_scalar("data/Loss", loss.item(), batch_idx+len(self.train_dataloader)*(epoch-1))
+                
+                print_loss += loss.item()
+                self.optimizer.zero_grad()
+                
+                loss.backward()
+                torch.nn.utils.clip_grad_value_(self.model.parameters(), 0.1)
+                self.optimizer.step()
+                if batch_idx %5 == 0:
+                    print('Epoch: {}, Training Loss: {:.4f}'.format(epoch, print_loss/5))
+                    print_loss = 0
+            except:
+                logging.debug(f'Image {batch_idx} is abnormal')
+
         log = {'train_loss': train_loss / len(self.train_dataloader)}
         print("Finish Epoch {} Training, Start Eval...".format(epoch))
 
