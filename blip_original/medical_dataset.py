@@ -68,24 +68,24 @@ class generation_train(Dataset):
 
         ann = self.ann_check_exist[index]
         image_path = ann['image_path']
-        '''if self.dataset == 'iu_xray':
+        if self.dataset == 'iu_xray':
             image_1 = Image.open(os.path.join(self.image_root, image_path[0])).convert('RGB')
             image_2 = Image.open(os.path.join(self.image_root, image_path[1])).convert('RGB')
             image_1 = self.transform(image_1)
             image_2 = self.transform(image_2)
             image = torch.stack((image_1, image_2), 0)
+ 
+        elif self.dataset == 'mimic_cxr':
+            path = os.path.join(self.image_root, image_path[0]).split('.')[0]
+            path_dcm = path + '.dcm'
+            ds = pydicom.dcmread(path_dcm)
+            ds_image = ds.pixel_array.astype(float)
+            #image = Image.open(os.path.join(self.image_root, path_dcm)).convert('RGB')
+            image = Image.fromarray(ds_image).convert('RGB')
+            image = self.transform(image)
 
-        elif self.dataset == 'mimic_cxr':'''
-        path = os.path.join(self.image_root, image_path[0]).split('.')[0]
-        path_dcm = path + '.dcm'
-        ds = pydicom.dcmread(path_dcm)
 
-        ds_image = ds.pixel_array.astype(float)
-        #image = Image.open(os.path.join(self.image_root, path_dcm)).convert('RGB')
-        image = Image.fromarray(ds_image).convert('RGB')
-        image = self.transform(image)
         caption = self.prompt + pre_caption(ann['report'], self.max_words)
-
         knowledge_skg = skg
         knowledge_tc = ''
         triplet_len = len(ann['triplet'])
@@ -124,21 +124,21 @@ class generation_eval(Dataset):
         ann = self.ann_check_exist[index]
 
         image_path = ann['image_path']
-        '''if self.dataset == 'iu_xray':
+        if self.dataset == 'iu_xray':
             image_1 = Image.open(os.path.join(self.image_root, image_path[0])).convert('RGB')
             image_2 = Image.open(os.path.join(self.image_root, image_path[1])).convert('RGB')
             image_1 = self.transform(image_1)
             image_2 = self.transform(image_2)
             image = torch.stack((image_1, image_2), 0)
 
-        elif self.dataset == 'mimic_cxr':'''
-        path = os.path.join(self.image_root, image_path[0]).split('.')[0]
-        path_dcm = path + '.dcm'
-        ds = pydicom.dcmread(path_dcm)
-        ds_image = ds.pixel_array.astype(float)
-        #image = Image.open(os.path.join(self.image_root, path_dcm)).convert('RGB')
-        image = Image.fromarray(ds_image).convert('RGB')
-        image = self.transform(image)
+        elif self.dataset == 'mimic_cxr':
+            path = os.path.join(self.image_root, image_path[0]).split('.')[0]
+            path_dcm = path + '.dcm'
+            ds = pydicom.dcmread(path_dcm)
+            ds_image = ds.pixel_array.astype(float)
+            #image = Image.open(os.path.join(self.image_root, path_dcm)).convert('RGB')
+            image = Image.fromarray(ds_image).convert('RGB')
+            image = self.transform(image)
                  
 
         caption = pre_caption(ann['report'], 90)

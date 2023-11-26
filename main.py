@@ -38,7 +38,6 @@ def main(args, config):
     tokenizer.enc_token_id = tokenizer.additional_special_tokens_ids[0]
     # tokenizer = BertTokenizer.from_pretrained(args.text_encoder)
 
-    # TODO: check how to load vit checkpoint. I still could not find the loading program. Huggingface is ofc a solution if we need to write it ourself.
     model = blip_decoder(pretrained=args.pretrained, image_size=config['image_size'], vit=config['vit'],
                          vit_grad_ckpt=config['vit_grad_ckpt'], vit_ckpt_layer=config['vit_ckpt_layer'],
                          prompt=config['prompt'], tokenizer=tokenizer, args=args)
@@ -66,7 +65,7 @@ def main(args, config):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default='./configs/Generation.yaml')
+    parser.add_argument('--config', default='./configs/BLIP.yaml')
     parser.add_argument('--checkpoint', default='')
     parser.add_argument('--pretrained', default='')
     parser.add_argument('--output_dir', default='output/generation')
@@ -80,10 +79,10 @@ if __name__ == '__main__':
     parser.add_argument('--distributed', default=True, type=bool)
 
     parser.add_argument('--image_dir', type=str,
-                        default='./dataset/iu_xray/images&/DATA1/llm-research/MIMIC-CXR/files',
+                        default='/DATA1/llm-research/IU_XRay/images&/DATA1/llm-research/MIMIC-CXR/files',
                         help='the path to the directory containing the data.')
     parser.add_argument('--ann_path', type=str,
-                        default='./annotations/iu-annotation.json&./annotations/mimic_annotation.json',
+                        default='./annotations/iu_annotation.json&./annotations/mimic_annotation.json',
                         help='the path to the directory containing the data.')
     parser.add_argument('--knowledge_path', type=str,
                         default='./annotations/iu_train_kg_AO.json&./annotations/mimic_train_kg_AO.json',
@@ -170,7 +169,7 @@ if __name__ == '__main__':
     parser.add_argument('--task', default="pretrain", type=bool) 
 
     args = parser.parse_args()
-    
-    config = yaml.load(open('/DATA1/bzhu/DCL/configs/BLIP.yaml', 'r'), Loader=yaml.Loader)
+
+    config = yaml.load(open(args.config, 'r'), Loader=yaml.Loader)
 
     main(args, config)

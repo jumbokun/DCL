@@ -8,14 +8,12 @@ from numpy import inf
 from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 from generation_api.tokenizers_blip import Tokenizer
-import logging
+# import logging
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger()
+# logging.basicConfig(level=logging.DEBUG)
+# logger = logging.getLogger()
 
 class BaseTrainer(object):
-    def print_grad(grad):
-        print(grad)
 
     def __init__(self, model, criterion, metric_ftns, optimizer, args, tokenizer):
         self.args = args
@@ -247,7 +245,8 @@ class Trainer(BaseTrainer):
                     print('Epoch: {}, Training Loss: {:.4f}'.format(epoch, print_loss/5))
                     print_loss = 0
             except:
-                logging.debug(f'Image {batch_idx} is abnormal')
+                continue
+                # logging.debug(f'Image {batch_idx} is abnormal')
 
         log = {'train_loss': train_loss / len(self.train_dataloader)}
         print("Finish Epoch {} Training, Start Eval...".format(epoch))
