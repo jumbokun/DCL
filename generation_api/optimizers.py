@@ -25,9 +25,6 @@ def build_optimizer_blip(args, model):
         amsgrad=args.amsgrad
     )
     print(optimizer)
-    for param in model.parameters():
-        print(param.shape)
-    # print(list(ed_params))
     return optimizer
 
 

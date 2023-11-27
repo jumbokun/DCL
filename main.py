@@ -1,7 +1,7 @@
 import torch
 from torch.nn.parallel import DistributedDataParallel
 import argparse
-import ruamel_yaml as yaml
+from ruamel import yaml
 import numpy as np
 from generation_api.metrics import compute_scores
 from generation_api.optimizers import build_optimizer_blip, build_lr_scheduler
@@ -15,6 +15,7 @@ import os
 from transformers import AutoTokenizer, AutoModel
 import torch.nn.functional as F
 import torch.distributed
+import pdb
 
 def main(args, config):
     # torch.distributed.init_process_group(backend='nccl')
@@ -39,17 +40,33 @@ def main(args, config):
     # tokenizer = BertTokenizer.from_pretrained(args.text_encoder)
 
     # TODO: check how to load vit checkpoint. I still could not find the loading program. Huggingface is ofc a solution if we need to write it ourself.
-    model = blip_decoder(pretrained=args.pretrained, image_size=config['image_size'], vit=config['vit'],
-                         vit_grad_ckpt=config['vit_grad_ckpt'], vit_ckpt_layer=config['vit_ckpt_layer'],
-                         prompt=config['prompt'], tokenizer=tokenizer, args=args)
+    model = blip_decoder(
+        pretrained=args.pretrained, 
+        image_size=config['image_size'], 
+        vit=config['vit'],
+        vit_grad_ckpt=config['vit_grad_ckpt'], 
+        vit_ckpt_layer=config['vit_ckpt_layer'],
+        prompt=config['prompt'], 
+        tokenizer=tokenizer, 
+        args=args
+    )
     
-    train_dataset, val_dataset, test_dataset = create_dataset('generation_%s'%args.dataset_name, args, config)
+    train_dataset, val_dataset, test_dataset = create_dataset(
+        'generation_%s'%args.dataset_name, 
+        args, 
+        config
+    )
+
     samplers = [None, None, None]
-    train_dataloader, val_dataloader, test_dataloader = create_loader([train_dataset, val_dataset, test_dataset], samplers,
-                                                            batch_size=[args.batch_size] * 3,
-                                                            num_workers=[4, 4, 4],
-                                                            is_trains=[True, False, False],
-                                                            collate_fns=[None, None, None])
+
+    train_dataloader, val_dataloader, test_dataloader = create_loader(
+        [train_dataset, val_dataset, test_dataset], 
+        samplers,
+        batch_size=[args.batch_size] * 3,
+        num_workers=[4, 4, 4],
+        is_trains=[True, False, False],
+        collate_fns=[None, None, None]
+    )
 
     # get function handles of loss and metrics
     criterion = compute_loss
@@ -66,7 +83,7 @@ def main(args, config):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default='./configs/Generation.yaml')
+    parser.add_argument('--config', default='./configs/BLIP.yaml')
     parser.add_argument('--checkpoint', default='')
     parser.add_argument('--pretrained', default='')
     parser.add_argument('--output_dir', default='output/generation')
@@ -80,7 +97,7 @@ if __name__ == '__main__':
     parser.add_argument('--distributed', default=True, type=bool)
 
     parser.add_argument('--image_dir', type=str,
-                        default='./dataset/iu_xray/images&/DATA1/llm-research/MIMIC-CXR/files',
+                        default='./dataset/iu_xray/images&./dataset/mimic_crx/physionet.org/files/mimic-cxr/2.0.0/files',
                         help='the path to the directory containing the data.')
     parser.add_argument('--ann_path', type=str,
                         default='./annotations/iu-annotation.json&./annotations/mimic_annotation.json',
@@ -170,7 +187,5 @@ if __name__ == '__main__':
     parser.add_argument('--task', default="pretrain", type=bool) 
 
     args = parser.parse_args()
-    
-    config = yaml.load(open('/DATA1/bzhu/DCL/configs/BLIP.yaml', 'r'), Loader=yaml.Loader)
-
+    config = yaml.load(open(args.config, 'r'), Loader=yaml.Loader)
     main(args, config)

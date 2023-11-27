@@ -1,5 +1,6 @@
 import json
 import os
+from socket import IP_DEFAULT_MULTICAST_LOOP
 import torch
 import pydicom
 from torch.utils.data import Dataset
@@ -11,6 +12,7 @@ Image.MAX_IMAGE_PIXELS = None
 import numpy as np
 from .utils import pre_caption
 import os
+import tqdm
 
 label_list = ['Atelectasis', 'Cardiomegaly', 'Consolidation', 'Edema', 'Enlarged Cardiomediastinum',
               'Fracture', 'Lung Lesion', 'Lung Opacity', 'No Finding', 'Pleural Effusion',
@@ -31,24 +33,31 @@ node_labels = [each+1 for each in node_labels]
 node_relations = list(range(len(node_inds)))
 node_relations = [each+1 for each in node_relations]
 
-skg = {'nodes':nodes, 'node_inds':node_inds, 'node_labels':node_labels, 'node_relations': node_relations}
+skg = {
+    'nodes':nodes, 
+    'node_inds':node_inds, 
+    'node_labels':node_labels, 
+    'node_relations': node_relations
+}
 
 def check_empty(ann, image_root):
     ann_check_exist = []
-    for i in range(len(ann)):
-            a = ann[i]
-            img_path = a['image_path']
-            path = os.path.join(image_root, img_path[0]).split('.')[0]
-            path_dcm = path + '.dcm'
-            if os.path.exists(path_dcm):
-                ann_check_exist.append(a)
+    for a in tqdm.tqdm(ann):
+        img_path = a['image_path']
+        if isinstance(img_path, list):
+            img_path = img_path[0]
+
+        img_path = os.path.join(
+            image_root, 
+            img_path.replace('.jpg', '.dcm')
+        )
+        if os.path.exists(img_path):
+            ann_check_exist.append(a)
     return ann_check_exist
 
 class generation_train(Dataset):
     def __init__(self, transform, image_root, ann_root, max_words=90, prompt='', dataset='', args=None):
-        
         self.annotation = json.load(open(os.path.join(ann_root),'r'))
-        #self.ann = self.annotation['train']
         self.ann = self.annotation
         self.transform = transform
         self.image_root = image_root
@@ -58,14 +67,10 @@ class generation_train(Dataset):
         self.args = args
         self.ann_check_exist = check_empty(self.ann, self.image_root)
 
-        #print(len(self.ann_check_exist))
-        #print(len(self.ann))
-
     def __len__(self):
         return len(self.ann_check_exist)
     
     def __getitem__(self, index):    
-
         ann = self.ann_check_exist[index]
         image_path = ann['image_path']
         '''if self.dataset == 'iu_xray':
@@ -76,9 +81,8 @@ class generation_train(Dataset):
             image = torch.stack((image_1, image_2), 0)
 
         elif self.dataset == 'mimic_cxr':'''
-        path = os.path.join(self.image_root, image_path[0]).split('.')[0]
-        path_dcm = path + '.dcm'
-        ds = pydicom.dcmread(path_dcm)
+        path = os.path.join(self.image_root, image_path[0]).replace('.jpg', '.dcm')
+        ds = pydicom.dcmread(path)
 
         ds_image = ds.pixel_array.astype(float)
         #image = Image.open(os.path.join(self.image_root, path_dcm)).convert('RGB')
@@ -107,7 +111,15 @@ class generation_train(Dataset):
     
     
 class generation_eval(Dataset):
-    def __init__(self, transform, image_root, ann_root, split, dataset, args=None):
+    def __init__(
+        self, 
+        transform, 
+        image_root, 
+        ann_root, 
+        split, 
+        dataset, 
+        args=None
+    ):
         self.annotation = json.load(open(os.path.join(ann_root), 'r'))
         self.ann = self.annotation[split]
         self.transform = transform
@@ -132,14 +144,12 @@ class generation_eval(Dataset):
             image = torch.stack((image_1, image_2), 0)
 
         elif self.dataset == 'mimic_cxr':'''
-        path = os.path.join(self.image_root, image_path[0]).split('.')[0]
-        path_dcm = path + '.dcm'
-        ds = pydicom.dcmread(path_dcm)
+        path = os.path.join(self.image_root, image_path[0]).replace('.jpg', '.dcm')
+        ds = pydicom.dcmread(path)
         ds_image = ds.pixel_array.astype(float)
         #image = Image.open(os.path.join(self.image_root, path_dcm)).convert('RGB')
         image = Image.fromarray(ds_image).convert('RGB')
         image = self.transform(image)
-                 
 
         caption = pre_caption(ann['report'], 90)
         knowledge_skg = skg

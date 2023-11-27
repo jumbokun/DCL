@@ -8,8 +8,12 @@ In this paper, we present a practical approach to leverage dynamic graph to enha
 All the requirements are listed in the requirements.txt file.
 Please use this command to create a new environment and activate it.
 ```
-conda create --name DCL --file requirements.txt
-conda activate DCL
+conda create --name DCL python=3.10
+
+conda install pip
+python -m pip install torch==1.11.0+cu113 torchvision==0.12.0+cu113 torchaudio==0.11.0 --extra-index-url https://download.pytorch.org/whl/cu113
+
+pip install -r requirements.txt
 ```  
 
 ## Data

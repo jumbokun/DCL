@@ -2,7 +2,6 @@ import warnings
 warnings.filterwarnings("ignore")
 import sys
 import os
-sys.path.insert(0, '/DATA1/bzhu/DCL/medical_knowledge')
 
 import logging
 from models.vit_blip import VisionTransformer, interpolate_pos_embed
@@ -29,7 +28,7 @@ base_path = os.getcwd()
         
 class BLIP_Decoder(nn.Module):
     def __init__(self,                 
-                 med_config = os.path.join(base_path, 'configs/med_config.json'),  
+                 med_config = os.path.join(base_path, './configs/med_config.json'),  
                  image_size = 224,
                  vit = 'base',
                  vit_grad_ckpt = False,
@@ -133,10 +132,10 @@ class BLIP_Decoder(nn.Module):
         if args.bert == 'base':
             self.text_decoder = BertLMHeadModel.from_pretrained('bert-base-uncased',config=decoder_config)
         elif args.bert == 'sci':
-            scibert = BertModel.from_pretrained('allenai/scibert_scivocab_uncased')
-            self.text_decoder = BertLMHeadModel(config = decoder_config)
-            self.text_decoder.load_state_dict(scibert.state_dict(), strict = False)
-            # self.text_decoder = BertLMHeadModel.from_pretrained('allenai/scibert_scivocab_uncased',config=decoder_config)
+            self.text_decoder = BertLMHeadModel.from_pretrained('allenai/scibert_scivocab_uncased',config=decoder_config, ignore_mismatched_sizes=True)
+            # scibert = BertModel.from_pretrained('allenai/scibert_scivocab_uncased')
+            # self.text_decoder = BertLMHeadModel(config = decoder_config)
+            # self.text_decoder.load_state_dict(scibert.state_dict(), strict = False)
         elif args.bert == 'cli':
             self.text_decoder = BertLMHeadModel.from_pretrained('emilyalsentzer/Bio_ClinicalBERT',config=decoder_config)
         self.text_decoder.resize_token_embeddings(len(self.tokenizer))
@@ -185,7 +184,7 @@ class BLIP_Decoder(nn.Module):
                     knowledge_item.pop()
                     knowledge_item = '-'.join(knowledge_item)
                     if j == 0:
-                        knowledge_all += knowledge_item
+                        knowledge_all = knowledge_all + knowledge_item
                     else:
                         knowledge_all = knowledge_all + '-' + knowledge_item
                     # knowledge_all += knowledge_item.replace(knowledge_item.split('-')[-1], ' ')
@@ -253,7 +252,7 @@ class BLIP_Decoder(nn.Module):
                 image_embeds_m = self.visual_encoder_m(image)
 
             image_feat_m = F.normalize(self.vision_proj_m(image_embeds_m[:, 0, :]),dim=-1)
-            text_output_m = self.text_encoder_m(text.input_ids, attention_mask=text.attention_mask,
+            text_output_m = self.text_encoder_m(text.input_ids.clone(), attention_mask=text.attention_mask,
                                                 return_dict=True, mode='text')
             text_feat_m = F.normalize(self.text_proj_m(text_output_m.last_hidden_state[:, 0, :]), dim=-1)
 
@@ -278,10 +277,15 @@ class BLIP_Decoder(nn.Module):
         sim_i2t = image_feat @ text_feat_all / self.temp
         sim_t2i = text_feat @ image_feat_all / self.temp
 
-        loss_i2t = -torch.sum(F.log_softmax(sim_i2t, dim=1)*sim_i2t_targets,dim=1).mean()
-        loss_t2i = -torch.sum(F.log_softmax(sim_t2i, dim=1)*sim_t2i_targets,dim=1).mean()
+        loss_i2t = F.log_softmax(sim_i2t, dim=1)
+        loss_i2t = loss_i2t * sim_i2t_targets
+        loss_i2t = -torch.sum(loss_i2t, dim=1).mean()
 
-        loss_irc = (loss_i2t+loss_t2i)/2
+        loss_t2i = F.log_softmax(sim_t2i, dim=1)
+        loss_t2i = loss_i2t * sim_t2i_targets
+        loss_t2i = -torch.sum(loss_t2i, dim=1).mean()
+
+        loss_irc = 1/2 * (loss_i2t+loss_t2i)
 
         self._dequeue_and_enqueue(image_feat_m, text_feat_m)
 
@@ -384,7 +388,7 @@ class BLIP_Decoder(nn.Module):
                 knowledge_item.pop()
                 knowledge_item = '-'.join(knowledge_item)
                 if j == 0:
-                    knowledge_all += knowledge_item
+                    knowledge_all = knowledge_all + knowledge_item
                 else:
                     knowledge_all = knowledge_all + '-' + knowledge_item
                 # knowledge_all += knowledge_item.replace(knowledge_item.split('-')[-1], ' ')
@@ -561,8 +565,8 @@ def load_checkpoint(model,url_or_filename):
         if key in state_dict.keys():
             if state_dict[key].shape!=model.state_dict()[key].shape:
                 # print(state_dict[key])
-                print(state_dict[key].shape)
-                print(model.state_dict()[key].shape)
+                # print(state_dict[key].shape)
+                # print(model.state_dict()[key].shape)
                 del state_dict[key]
     
     msg = model.load_state_dict(state_dict,strict=False)
@@ -580,8 +584,6 @@ def concat_all_gather(tensor):
         for _ in range(torch.distributed.get_world_size())]
         # for _ in range(2)] # Since we dont (have to) use dist lib, then the world size should be 2(?)
     torch.distributed.all_gather(tensors_gather, tensor, async_op=False)
-    print(tensor.shape)
-    print(tensors_gather)
     output = torch.cat(tensor, dim=0)
     return output     
 
@@ -653,7 +655,7 @@ def tie_encoder_decoder_weights(encoder: nn.Module, decoder: nn.Module, base_mod
                 )
                 all_encoder_weights.remove(module_name + "/" + encoder_name)
 
-            uninitialized_encoder_weights += list(all_encoder_weights)
+            uninitialized_encoder_weights = uninitialized_encoder_weights + list(all_encoder_weights)
 
     # tie weights recursively
     tie_encoder_to_decoder_recursively(decoder, encoder, base_model_prefix, uninitialized_encoder_weights, skip_key)  

@@ -30,9 +30,32 @@ def create_dataset(dataset, args, config):
         return train_dataset, val_dataset, test_dataset
 
     elif dataset =='generation_mimic_cxr':
-        train_dataset = generation_train(transform_train, args.image_dir.split('&')[1], args.knowledge_path.split('&')[1], prompt=config['prompt'], dataset='mimic_cxr', args=args)
-        val_dataset = generation_eval(transform_test, args.image_dir.split('&')[1], args.ann_path.split('&')[1], 'val', 'mimic_cxr', args=args)
-        test_dataset = generation_eval(transform_test, args.image_dir.split('&')[1], args.ann_path.split('&')[1], 'test', 'mimic_cxr', args=args)
+        train_dataset = generation_train(
+            transform_train, 
+            args.image_dir.split('&')[1], 
+            args.knowledge_path.split('&')[1], 
+            prompt=config['prompt'], 
+            dataset='mimic_cxr', 
+            args=args
+        )
+        val_dataset = generation_eval(
+            transform_test, 
+            args.image_dir.split('&')[1], 
+            args.ann_path.split('&')[1], 
+            'val', 
+            'mimic_cxr', 
+            args=args
+        )
+
+        test_dataset = generation_eval(
+            transform_test, 
+            args.image_dir.split('&')[1], 
+            args.ann_path.split('&')[1], 
+            'test', 
+            'mimic_cxr', 
+            args=args
+        )
+
         return train_dataset, val_dataset, test_dataset
     
 def create_sampler(datasets, shuffles, num_tasks, global_rank):

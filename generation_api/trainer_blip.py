@@ -5,15 +5,12 @@ import time
 import torch
 import pandas as pd
 from numpy import inf
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 import torch.nn.functional as F
 from generation_api.tokenizers_blip import Tokenizer
 
 
 class BaseTrainer(object):
-    def print_grad(grad):
-        print(grad)
-
     def __init__(self, model, criterion, metric_ftns, optimizer, args, tokenizer):
         self.args = args
         self.tokenizer = tokenizer
@@ -210,7 +207,7 @@ class Trainer(BaseTrainer):
         self.val_dataloader = val_dataloader
         self.test_dataloader = test_dataloader
         ## check the training
-        self.writer = SummaryWriter()
+        #self.writer = SummaryWriter()
 
     def _train_epoch_dcl(self, epoch):
         
@@ -225,21 +222,22 @@ class Trainer(BaseTrainer):
                 alpha = 0.4
             else:
                 alpha = 0.4 * min(1, batch_idx / len(self.train_dataloader))
-            
+
             images = images.to(self.device)
 
             loss_irc, loss_irm, loss_lm = self.model(images, captions, knowledge_skg, knowledge_tc,alpha=alpha,epoch=epoch)
-            loss = loss_irc+ loss_irm + loss_lm
-            print(f"Loss = {loss_irc} (loss_irc) + {loss_irm} (loss_irm) + {loss_lm} (loss_lm)")
+            
+            loss = loss_irc + loss_irm + loss_lm
             train_loss += loss.item()
-            self.writer.add_scalar("data/Loss", loss.item(), batch_idx+len(self.train_dataloader)*(epoch-1))
-            
+            #self.writer.add_scalar("data/Loss", loss.item(), batch_idx+len(self.train_dataloader)*(epoch-1))
             print_loss += loss.item()
-            self.optimizer.zero_grad()
             
+            self.optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_value_(self.model.parameters(), 0.1)
             self.optimizer.step()
+            
+            
             if batch_idx %5 == 0:
                 print('Epoch: {}, Training Loss: {:.4f}'.format(epoch, print_loss/5))
                 print_loss = 0
@@ -270,13 +268,13 @@ class Trainer(BaseTrainer):
             val_met = self.metric_ftns({i: [gt] for i, gt in enumerate(val_gts)},
                                        {i: [re] for i, re in enumerate(val_res)})
             log.update(**{'val_' + k: v for k, v in val_met.items()})
-        self.writer.add_scalar("data/b1/val", val_met['BLEU_1'], epoch)
-        self.writer.add_scalar("data/b2/val", val_met['BLEU_2'], epoch)
-        self.writer.add_scalar("data/b3/val", val_met['BLEU_3'], epoch)
-        self.writer.add_scalar("data/b4/val", val_met['BLEU_4'], epoch)
-        self.writer.add_scalar("data/met/val", val_met['METEOR'], epoch)
-        self.writer.add_scalar("data/rou/val", val_met['ROUGE_L'], epoch)
-        self.writer.add_scalar("data/cid/val", val_met['CIDER'], epoch)
+        #self.writer.add_scalar("data/b1/val", val_met['BLEU_1'], epoch)
+        #self.writer.add_scalar("data/b2/val", val_met['BLEU_2'], epoch)
+        #self.writer.add_scalar("data/b3/val", val_met['BLEU_3'], epoch)
+        #self.writer.add_scalar("data/b4/val", val_met['BLEU_4'], epoch)
+        #self.writer.add_scalar("data/met/val", val_met['METEOR'], epoch)
+        #self.writer.add_scalar("data/rou/val", val_met['ROUGE_L'], epoch)
+        #self.writer.add_scalar("data/cid/val", val_met['CIDER'], epoch)
 
         self.model.eval()
         with torch.no_grad():
@@ -304,15 +302,15 @@ class Trainer(BaseTrainer):
             test_met = self.metric_ftns({i: [gt] for i, gt in enumerate(test_gts)},
                                         {i: [re] for i, re in enumerate(test_res)})
             log.update(**{'test_' + k: v for k, v in test_met.items()})
-        self.writer.add_scalar("data/b1/test", test_met['BLEU_1'], epoch)
-        self.writer.add_scalar("data/b2/test", test_met['BLEU_2'], epoch)
-        self.writer.add_scalar("data/b3/test", test_met['BLEU_3'], epoch)
-        self.writer.add_scalar("data/b4/test", test_met['BLEU_4'], epoch)
-        self.writer.add_scalar("data/met/test", test_met['METEOR'], epoch)
-        self.writer.add_scalar("data/rou/test", test_met['ROUGE_L'], epoch)
-        self.writer.add_scalar("data/cid/test", test_met['CIDER'], epoch)
+        #self.writer.add_scalar("data/b1/test", test_met['BLEU_1'], epoch)
+        #self.writer.add_scalar("data/b2/test", test_met['BLEU_2'], epoch)
+        #self.writer.add_scalar("data/b3/test", test_met['BLEU_3'], epoch)
+        #self.writer.add_scalar("data/b4/test", test_met['BLEU_4'], epoch)
+        #self.writer.add_scalar("data/met/test", test_met['METEOR'], epoch)
+        #self.writer.add_scalar("data/rou/test", test_met['ROUGE_L'], epoch)
+        #self.writer.add_scalar("data/cid/test", test_met['CIDER'], epoch)
 
         self.lr_scheduler.step()
-        self.writer.close()
+        #self.writer.close()
 
         return log
