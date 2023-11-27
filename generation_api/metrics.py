@@ -16,7 +16,7 @@ def compute_scores(gts, res):
     # Set up scorers
     scorers = [
         (Bleu(4), ["BLEU_1", "BLEU_2", "BLEU_3", "BLEU_4"]),
-        (Meteor(), "METEOR"),
+        #(Meteor(), "METEOR"),
         (Rouge(), "ROUGE_L"),
         (Cider(), "CIDER")
     ]

@@ -110,7 +110,7 @@ class BaseTrainer(object):
     def _save_file(self, log):
         if not os.path.exists(self.args.record_dir):
             os.mkdir(self.args.record_dir)
-        record_path = os.path.join(self.args.record_dir, self.args.dataset_name +'_'+self.args.save_dir.split('/')[2] +'.json')
+        record_path = os.path.join(self.args.record_dir, self.args.dataset_name +'_'+self.args.save_dir.split('/')[-1] +'.json')
         with open(record_path, 'w') as f:
             json.dump(log, f)
 
@@ -262,15 +262,15 @@ class Trainer(BaseTrainer):
 
                 val_res.extend(reports)
                 val_gts.extend(ground_truths)
-
-            val_met = self.metric_ftns({i: [gt] for i, gt in enumerate(val_gts)},
-                                       {i: [re] for i, re in enumerate(val_res)})
-            log.update(**{'val_' + k: v for k, v in val_met.items()})
+        
+        val_met = self.metric_ftns({i: [gt] for i, gt in enumerate(val_gts)},
+                                   {i: [re] for i, re in enumerate(val_res)})
+        log.update(**{'val_' + k: v for k, v in val_met.items()})
         self.writer.add_scalar("data/b1/val", val_met['BLEU_1'], epoch)
         self.writer.add_scalar("data/b2/val", val_met['BLEU_2'], epoch)
         self.writer.add_scalar("data/b3/val", val_met['BLEU_3'], epoch)
         self.writer.add_scalar("data/b4/val", val_met['BLEU_4'], epoch)
-        self.writer.add_scalar("data/met/val", val_met['METEOR'], epoch)
+        # self.writer.add_scalar("data/met/val", val_met['METEOR'], epoch)
         self.writer.add_scalar("data/rou/val", val_met['ROUGE_L'], epoch)
         self.writer.add_scalar("data/cid/val", val_met['CIDER'], epoch)
 
@@ -304,7 +304,7 @@ class Trainer(BaseTrainer):
         self.writer.add_scalar("data/b2/test", test_met['BLEU_2'], epoch)
         self.writer.add_scalar("data/b3/test", test_met['BLEU_3'], epoch)
         self.writer.add_scalar("data/b4/test", test_met['BLEU_4'], epoch)
-        self.writer.add_scalar("data/met/test", test_met['METEOR'], epoch)
+        # self.writer.add_scalar("data/met/test", test_met['METEOR'], epoch)
         self.writer.add_scalar("data/rou/test", test_met['ROUGE_L'], epoch)
         self.writer.add_scalar("data/cid/test", test_met['CIDER'], epoch)
 
