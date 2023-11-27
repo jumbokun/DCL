@@ -6,6 +6,7 @@ annotations/*
 annotations/mimic_annotation.json
 annotations/mimic_train_kg_AO.json
 /DATA1/bzhu/DCL/annotations/*
+/runs/
 
 # Python files to ignore
 *.pyc
