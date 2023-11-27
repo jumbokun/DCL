@@ -18,8 +18,8 @@ import torch.distributed
 import pdb
 
 def main(args, config):
-    # torch.distributed.init_process_group(backend='nccl')
-    # print(torch.distributed.get_world_size())
+    torch.distributed.init_process_group(backend='nccl')
+    print(torch.distributed.get_world_size())
 
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = True
