@@ -7,7 +7,7 @@ annotations/mimic_annotation.json
 annotations/mimic_train_kg_AO.json
 /DATA1/bzhu/DCL/annotations/*
 /runs/
-/records/generated_records/*
+/records/generated_records/*.json
 /results/test/*
 /results/fair/*
 
@@ -28,6 +28,6 @@ env/
 venv/
 *.log
 *.csv
-*.json
+#*.json
 *.lock
 *.sqlite
