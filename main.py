@@ -1,21 +1,21 @@
 import torch
-from torch.nn.parallel import DistributedDataParallel
 import argparse
 from ruamel import yaml
 import numpy as np
 from generation_api.metrics import compute_scores
 from generation_api.optimizers import build_optimizer_blip, build_lr_scheduler
-from generation_api.trainer_blip import Trainer
 from generation_api.loss import compute_loss
 from transformers import BertTokenizer
 from generation_api.tokenizers_blip import Tokenizer
 from models.blip import blip_decoder
 from blip_original import create_loader, create_dataset
 import os
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer
 import torch.nn.functional as F
 import torch.distributed
 import pdb
+import lightning as L
+import pickle
 
 def main(args, config):
     #torch.distributed.init_process_group(backend='nccl')
@@ -37,20 +37,9 @@ def main(args, config):
     tokenizer.add_special_tokens({'bos_token': '[DEC]'})
     tokenizer.add_special_tokens({'additional_special_tokens': ['[ENC]']})
     tokenizer.enc_token_id = tokenizer.additional_special_tokens_ids[0]
+
     # tokenizer = BertTokenizer.from_pretrained(args.text_encoder)
 
-    # TODO: check how to load vit checkpoint. I still could not find the loading program. Huggingface is ofc a solution if we need to write it ourself.
-    model = blip_decoder(
-        pretrained=args.pretrained, 
-        image_size=config['image_size'], 
-        vit=config['vit'],
-        vit_grad_ckpt=config['vit_grad_ckpt'], 
-        vit_ckpt_layer=config['vit_ckpt_layer'],
-        prompt=config['prompt'], 
-        tokenizer=tokenizer, 
-        args=args
-    )
-    
     train_dataset, val_dataset, test_dataset = create_dataset(
         'generation_%s'%args.dataset_name, 
         args, 
@@ -68,6 +57,46 @@ def main(args, config):
         collate_fns=[None, None, None]
     )
 
+    # import pickle
+
+    # def check_dataset(dataset):
+    #     for i, item in enumerate(dataset):
+    #         try:
+    #             pickle.dumps(item)
+    #             print(i)
+    #         except pickle.PickleError as e:
+    #             print(f"Item {i} in the dataset cannot be pickled. It is of type {type(item)}.")
+    #             print("The error message is:", str(e))
+    #             return False
+    #     print("All items in the dataset can be pickled.")
+    #     return True
+
+    # check_dataset(train_dataset)
+    
+    # TODO: seems that DECODER(BLIP/Lightning model) can not see the dataloader directly, thus need to define it previously. Any elegant solution to it?
+    args.trainset_len = len(train_dataloader)
+
+    # # TODO: check where to freeze/unfreeze param
+    model = blip_decoder(
+        pretrained=args.pretrained,
+        image_size=config['image_size'], 
+        vit=config['vit'],
+        vit_grad_ckpt=config['vit_grad_ckpt'], 
+        vit_ckpt_layer=config['vit_ckpt_layer'],
+        prompt=config['prompt'], 
+        tokenizer=tokenizer, 
+        metric_ftns = compute_scores,
+        args=args
+    )
+
+
+    # pickle.dumps(model)
+    # -1 stands for using all gpus available. Change it to 'auto' when running on clusters.
+    trainer = L.Trainer(accelerator='gpu', devices=2, limit_train_batches=100, max_epochs=1, strategy='ddp')
+    trainer.fit(model=model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
+    trainer.test(test_dataloaders=test_dataloader)
+
+    '''
     # get function handles of loss and metrics
     criterion = compute_loss
     metrics = compute_scores
@@ -79,7 +108,7 @@ def main(args, config):
     # build trainer and start to train
     trainer = Trainer(model, criterion, metrics, optimizer, args, lr_scheduler, train_dataloader, val_dataloader, test_dataloader, tokenizer)
     trainer.train()
-
+    '''
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -97,7 +126,7 @@ if __name__ == '__main__':
     parser.add_argument('--distributed', default=True, type=bool)
 
     parser.add_argument('--image_dir', type=str,
-                        default='./dataset/iu_xray/images&./dataset/mimic_crx/physionet.org/files/mimic-cxr/2.0.0/files',
+                        default='./dataset/iu_xray/images&./dataset/MIMIC-CXR/files',
                         help='the path to the directory containing the data.')
     parser.add_argument('--ann_path', type=str,
                         default='./annotations/iu-annotation.json&./annotations/mimic_annotation.json',

@@ -9,6 +9,7 @@ from models.med import BertConfig, BertModel, BertLMHeadModel
 from transformers import BertTokenizer, AutoTokenizer
 import transformers
 transformers.logging.set_verbosity_error()
+from torch.utils.tensorboard import SummaryWriter
 
 import torch
 from torch import nn
@@ -21,12 +22,13 @@ from functools import partial
 from medical_knowledge.knowledge import create_knowledge
 from medical_knowledge.SKG_knowledge import *
 from models.tagencoder import TagEncoder, update_skg
+import lightning as L
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 base_path = os.getcwd()
         
-class BLIP_Decoder(nn.Module):
+class BLIP_Decoder(L.LightningModule):
     def __init__(self,                 
                  med_config = os.path.join(base_path, './configs/med_config.json'),  
                  image_size = 224,
@@ -38,6 +40,7 @@ class BLIP_Decoder(nn.Module):
                  embed_dim = 256,     
                  queue_size = 65536,
                  momentum = 0.995,
+                 metric_ftns = None,
                  args = None
                  ):
         """
@@ -53,7 +56,7 @@ class BLIP_Decoder(nn.Module):
         self.tokenizer = tokenizer
         self.args = args
         self.prompt = prompt
-        
+        self.metric_ftns = metric_ftns
         if args.bert == 'base':
             med_config = os.path.join(base_path, 'configs/med_config_blip.json')
         elif args.bert == 'sci':
@@ -144,8 +147,9 @@ class BLIP_Decoder(nn.Module):
         self.create_knowledge = create_knowledge(embed_dim=embed_dim, queue_size=queue_size,
                                                  text_encoder=self.text_encoder, text_proj=self.text_proj,
                                                  tokenizer=self.tokenizer, args=args)
+        self.print_loss = 0
+        self.writer = SummaryWriter()
 
-        
         
     def forward(self, image, caption, knowledge_skg, knowledge_tc,alpha, epoch):
         torch.autograd.set_detect_anomaly(True)
@@ -503,7 +507,115 @@ class BLIP_Decoder(nn.Module):
         ptr = (ptr + batch_size) % self.queue_size  # move pointer
 
         self.queue_ptr[0] = ptr 
+
+    def configure_optimizers(self):
+        ve_params = list(map(id, self.parameters()))
+        ed_params = filter(lambda x: id(x) not in ve_params, self.parameters())
+        optimizer = getattr(torch.optim, self.args.optim)(
+            [{'params': self.parameters(), 'lr': self.args.lr_ve},
+            {'params': ed_params, 'lr': self.args.lr_ed}],
+            weight_decay=self.args.weight_decay,
+            amsgrad=self.args.amsgrad
+        )
+        return optimizer
     
+    def training_step(self, train_batch, batch_idx):
+        
+        images, captions, knowledge_skg, knowledge_tc = train_batch
+        # ramp up alpha in the first 2 epochs
+        if self.current_epoch > 0:
+            alpha = 0.4
+        else:
+            alpha = 0.4 * min(1, batch_idx / self.args.trainset_len)
+
+        images = images.to(self.device)
+        loss_irc, loss_irm, loss_lm = self(images, captions, knowledge_skg, knowledge_tc,alpha=alpha,epoch=self.current_epoch)
+        
+        loss = loss_irc + loss_irm + loss_lm
+        # self.train_loss += loss.item()
+        self.print_loss += loss.item()
+        
+        if batch_idx %5 == 0:
+            # self.log("data/Loss", loss.item(), batch_idx+self.args.trainset_len*(self.current_epoch-1))
+            print('Epoch: {}, Training Loss: {:.4f}'.format(self.current_epoch, self.print_loss/5))
+            self.print_loss = 0
+
+        return loss
+    
+    # TODO: need double check this
+    def on_after_backward(self):
+        torch.nn.utils.clip_grad_value_(self.parameters(), 0.1)
+    
+    def validation_step(self, batch, batch_idx):
+        with torch.no_grad():
+            val_gts, val_res = [], []
+            a = (0, 0, 0, 0)
+            b = ('image_path', 'predict', 'ground_truth', 'knowledge_used')
+            d_val = dict(zip(b, a))
+            item_val = []
+            images, captions, knowledge_skg, image_path = batch
+            images = images.to(self.device)
+            ground_truths = captions
+            reports, knowledge_used = self.generate(images, knowledge_skg, sample=False, num_beams=3, max_length=90, min_length=5)
+            if self.args.test_best:
+                d_val['image_path'] = image_path
+                d_val['predict'] = reports
+                d_val['ground_truth'] = ground_truths
+                d_val['knowledge_used'] = knowledge_used
+                item_val.append(d_val.copy())
+
+            val_res.extend(reports)
+            val_gts.extend(ground_truths)
+            
+            val_met = self.metric_ftns({i: [gt] for i, gt in enumerate(val_gts)},
+                                    {i: [re] for i, re in enumerate(val_res)})
+            # self.log.update(**{'val_' + k: v for k, v in val_met.items()})
+            self.writer.add_scalar("data/b1/val", val_met['BLEU_1'], self.current_epoch)
+            self.writer.add_scalar("data/b2/val", val_met['BLEU_2'], self.current_epoch)
+            self.writer.add_scalar("data/b3/val", val_met['BLEU_3'], self.current_epoch)
+            self.writer.add_scalar("data/b4/val", val_met['BLEU_4'], self.current_epoch)
+            # self.writer.add_scalar("data/met/val", val_met['METEOR'], epoch)
+            self.writer.add_scalar("data/rou/val", val_met['ROUGE_L'], self.current_epoch)
+            self.writer.add_scalar("data/cid/val", val_met['CIDER'], self.current_epoch)
+
+    def test_step(self, batch, batch_idx):
+        with torch.no_grad():
+            test_gts, test_res = [], []
+            a = (0, 0, 0, 0)
+            b = ('image_path', 'predict', 'ground_truth', 'knowledge_used')
+            d_test = dict(zip(b, a))
+            item_test = []
+            images, captions, knowledge_skg, image_path = batch
+
+            images = images.to(self.device)
+            reports, knowledge_used = self.generate(images, knowledge_skg, sample=False, num_beams=3, max_length=90, min_length=5)
+            ground_truths = captions
+
+            if self.args.test_best:
+            # if epoch == 10:
+                d_test['image_path'] = image_path
+                d_test['predict'] = reports
+                d_test['ground_truth'] = ground_truths
+                d_test['knowledge_used'] = knowledge_used
+                item_test.append(d_test.copy())
+
+            test_res.extend(reports)
+            test_gts.extend(ground_truths)
+
+            test_met = self.metric_ftns({i: [gt] for i, gt in enumerate(test_gts)},
+                                        {i: [re] for i, re in enumerate(test_res)})
+            # self.log.update(**{'test_' + k: v for k, v in test_met.items()})
+            self.writer.add_scalar("data/b1/test", test_met['BLEU_1'], self.current_epoch)
+            self.writer.add_scalar("data/b2/test", test_met['BLEU_2'], self.current_epoch)
+            self.writer.add_scalar("data/b3/test", test_met['BLEU_3'], self.current_epoch)
+            self.writer.add_scalar("data/b4/test", test_met['BLEU_4'], self.current_epoch)
+            # self.writer.add_scalar("data/met/test", test_met['METEOR'], self.current_epoch)
+            self.writer.add_scalar("data/rou/test", test_met['ROUGE_L'], self.current_epoch)
+            self.writer.add_scalar("data/cid/test", test_met['CIDER'], self.current_epoch)
+        
+    def on_fit_end(self) -> None:
+        self.writer.close()
+        return super().on_fit_end()
 
 def blip_decoder(pretrained='',**kwargs):
     model = BLIP_Decoder(**kwargs)
